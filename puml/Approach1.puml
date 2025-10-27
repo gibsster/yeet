@@ -1,0 +1,70 @@
+@startuml
+title Approach 1 (Simplified): AWS-Native Observability
+
+actor User
+rectangle "React SPA (S3/CloudFront)" as CDN
+rectangle "AWS WAF" as WAF
+rectangle "ALB" as ALB
+
+rectangle "ECS Cluster" as ECS {
+  note left of ECS
+    ECS Tasks configured with:
+      - CloudWatch Agent for logs/metrics
+      - X-Ray Daemon for traces
+  end note
+  component "BANK"
+  component "REWARDS"
+  component "SOCKETS"
+}
+rectangle "RDS"
+rectangle "Amazon MSK (Kafka)" as MSK
+
+' --- The AWS Observability Hub ---
+rectangle "Amazon CloudWatch" as CW {
+  rectangle "Logs Insights" as CW_LOGS
+  rectangle "Metrics" as CW_METRICS
+  rectangle "Dashboards" as CW_DASH
+  rectangle "Alarms" as CW_ALARMS
+}
+
+rectangle "AWS X-Ray" as XR
+rectangle "CloudWatch Synthetics" as SYNTH
+rectangle "Amazon SNS" as SNS
+rectangle "PagerDuty / Slack" as ALERTS
+
+' --- Application Flow ---
+User --> CDN
+CDN --> WAF
+WAF --> ALB
+ALB --> ECS
+
+ECS --> RDS : Read/Write
+ECS --> MSK : Consume/Produce
+
+' --- Observability Flow ---
+' Ingestion
+ECS --> CW_METRICS : App Metrics
+ECS --> CW_LOGS : App Logs
+ECS --> XR : Traces
+
+ALB --> CW_LOGS : Access Logs
+ALB --> CW_METRICS : Request Metrics
+WAF --> CW_LOGS : Blocked/Allowed Logs
+RDS --> CW_METRICS : DB Metrics
+MSK --> CW_METRICS : Broker Metrics
+
+' Proactive Monitoring
+SYNTH --> ALB : Uptime Probes
+SYNTH --> SOCKETS : Chat Connection Test
+SYNTH --> CW_METRICS : Probe Success/Failure
+
+' Visualization & Alerting
+CW_METRICS --> CW_DASH
+CW_LOGS --> CW_DASH
+XR --> CW_DASH : (Service Map)
+
+CW_METRICS --> CW_ALARMS : Trigger Alarms
+CW_ALARMS --> SNS : Send Notifications
+SNS --> ALERTS : Route to Team
+
+@enduml

@@ -1,0 +1,85 @@
+@startuml
+title Approach 2 (Corrected): Full Open-Source Stack (Grafana + OTel)
+
+actor "User (React SPA)" as User
+rectangle "CloudFront + S3" as CDN
+rectangle "ALB" as ALB
+rectangle "ECS Cluster (Fargate)" as ECS {
+  note left of ECS
+    Services instrumented with
+    OpenTelemetry (OTel) SDK.
+  end note
+  component "BANK" as BANK
+  component "REWARDS" as REWARDS
+  component "SOCKETS" as SOCKETS
+}
+rectangle "Amazon MSK (Kafka)" as MSK
+rectangle "RDS (Bank DB)" as RDS
+
+' --- Observability Stack ---
+rectangle "Observability Stack" {
+  component "Prometheus" as PROM
+  component "Grafana" as GRAF
+  component "Loki" as LOKI
+  component "Tempo" as TEMPO
+  component "Alertmanager" as ALERTM
+}
+
+' --- Collectors & Exporters ---
+rectangle "OpenTelemetry Collector" as OTEL
+rectangle "Promtail" as PROMTAIL
+rectangle "Blackbox Exporter" as BLACKBOX
+rectangle "CloudWatch Exporter" as CW_EXPORTER
+rectangle "AWS CloudWatch" as CWMETRICS
+
+rectangle "PagerDuty / Slack" as ALERTS
+
+' --- Application Flow ---
+User --> CDN : Request SPA
+CDN --> ALB : Route API Calls
+ALB --> ECS : Forward traffic
+ECS --> BANK
+ECS --> REWARDS
+ECS --> SOCKETS
+REWARDS --> MSK : Publish reward events
+BANK --> RDS : Store transactions
+
+' --- Observability: Application Data (APM) ---
+' All services send OTel data (logs, metrics, traces)
+BANK --> OTEL
+REWARDS --> OTEL
+SOCKETS --> OTEL
+
+' OTel Collector fans out to the stack
+OTEL --> PROM : Metrics (via prom-remote-write)
+OTEL --> LOKI : Logs (via loki-exporter)
+OTEL --> TEMPO : Traces (via otlp-exporter)
+
+' --- Observability: Infrastructure Data ---
+' Prometheus scrapes exporters for infra metrics
+PROM --> CW_EXPORTER : Scrapes AWS metrics (infra)
+CW_EXPORTER --> CWMETRICS : Query metrics via API
+CWMETRICS --> RDS : Gets metrics
+CWMETRICS --> MSK : Gets metrics
+CWMETRICS --> ALB : Gets metrics
+
+' Prometheus scrapes Blackbox for uptime
+PROM --> BLACKBOX : Scrapes uptime probes
+BLACKBOX --> ALB : Probes API endpoint
+BLACKBOX --> SOCKETS : Probes Chat endpoint
+
+' Promtail ships infrastructure logs
+PROMTAIL --> LOKI : Ships ALB/WAF logs
+ALB --> PROMTAIL : (e.g., from S3 bucket)
+
+' --- Alerting & Visualization Flow ---
+' Grafana queries all data sources
+GRAF <-- PROM
+GRAF <-- LOKI
+GRAF <-- TEMPO
+
+' Prometheus sends alerts
+PROM --> ALERTM : Fires alerts
+ALERTM --> ALERTS : Notifies teams
+
+@enduml
